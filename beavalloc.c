@@ -17,6 +17,7 @@ typedef struct mem_block_s {
 #define BLOCK_DATA(__curr) (((void *) __curr) + (BLOCK_SIZE))
 
 static mem_block_t *block_list_head = NULL;
+static mem_block_t *block_list_tail = NULL;
 
 static void *lower_mem_bound = NULL;
 static void *upper_mem_bound = NULL;
@@ -55,13 +56,65 @@ void *
 beavalloc(size_t size)
 {
     void *ptr = NULL;
-
+    int capacity = 0;
+    struct mem_block_s *new_block = NULL;
+    
+    //Set capacity to nearest multiple of 1024
+    capacity = (int)((size + BLOCK_SIZE + 1023) / 1024);
+    capacity *= 1024;
+    
+    //sbrk to request new memory
+    ptr = sbrk(capacity);
+    
+    //set higher bounds
+    upper_mem_bound = ptr + capacity;
+    
+    //
+    if(block_list_head == NULL){
+      
+      //set lower bound
+      lower_mem_bound = ptr;
+      
+      //set new block values
+      new_block = ptr;
+      new_block->size = size;
+      new_block->capacity = capacity-BLOCK_SIZE;
+      new_block->prev = NULL;
+      new_block->next = NULL;
+      new_block->free = 0;
+    
+      //set block list head to new block
+      block_list_head = new_block;
+      block_list_tail = new_block;
+      
+    } else {
+      
+      //Set new block values
+      new_block = ptr;
+      new_block->size = size;
+      new_block->capacity = capacity-BLOCK_SIZE;
+      new_block->prev = block_list_tail;
+      new_block->next = NULL;
+      new_block->free = 0;
+      
+      //Set previous block's next
+      block_list_tail->next = new_block;
+    
+      //set block list head to new block
+      block_list_tail = new_block;
+    }
+      
+    //get data location
+    ptr = BLOCK_DATA(new_block);
     return ptr;
 }
 
 void 
 beavfree(void *ptr)
 {
+    struct mem_block_s *mem_block = ptr-BLOCK_SIZE;
+    mem_block->size = 0;
+    mem_block->free = 1;
     return;
 }
 
@@ -69,6 +122,7 @@ beavfree(void *ptr)
 void 
 beavalloc_reset(void)
 {
+  brk(lower_mem_bound);
 }
 
 void *
