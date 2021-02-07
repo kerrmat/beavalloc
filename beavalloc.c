@@ -58,21 +58,21 @@ beavalloc(size_t size)
     void *ptr = NULL;
     int capacity = 0;
     struct mem_block_s *new_block = NULL;
+    struct mem_block_s *block_parse = NULL;
     
-    //Set capacity to nearest multiple of 1024
-    capacity = (int)((size + BLOCK_SIZE + 1023) / 1024);
-    capacity *= 1024;
     
-    //sbrk to request new memory
-    ptr = sbrk(capacity);
-    
-    //set higher bounds
-    upper_mem_bound = ptr + capacity;
-    
-    //
+    //If this is the first allocation
     if(block_list_head == NULL){
+    
+      //Set capacity to nearest multiple of 1024
+      capacity = (int)((size + BLOCK_SIZE + 1023) / 1024);
+      capacity *= 1024;
+    
+      //sbrk to request new memory
+      ptr = sbrk(capacity);
       
-      //set lower bound
+      //set higher and lower bounds
+      upper_mem_bound = ptr + capacity;
       lower_mem_bound = ptr;
       
       //set new block values
@@ -87,7 +87,55 @@ beavalloc(size_t size)
       block_list_head = new_block;
       block_list_tail = new_block;
       
+      ptr = BLOCK_DATA(new_block);
+      return ptr;
+      
     } else {
+    
+      //Check for blocks to split
+      block_parse = block_list_head;
+      while(block_parse != NULL){
+        //If there is enough room
+        if(block_parse->capacity - block_parse->size >= size + BLOCK_SIZE){
+        
+          if(block_parse->free > 0){
+              block_parse->size = size;
+              block_parse->free = 0;
+              return BLOCK_DATA(block_parse);
+          }
+        
+          //Set new block to be the end of parsed block
+          new_block = block_parse + BLOCK_SIZE + block_parse->size;
+          new_block->size = size;
+          new_block->capacity = block_parse->capacity - BLOCK_SIZE - block_parse->size;
+          new_block->prev = block_parse;
+          new_block->next = block_parse->next;
+          new_block->free = 0;
+          
+          if(new_block->next != NULL){
+            new_block->next->prev = new_block;
+          }
+          
+          block_parse->next = new_block;
+          block_parse->capacity = block_parse->size;
+          
+          ptr = BLOCK_DATA(new_block);
+          return ptr;
+        }
+        else {
+          block_parse = block_parse->next;
+        }
+      }
+    
+      //Set capacity to nearest multiple of 1024
+      capacity = (int)((size + BLOCK_SIZE + 1023) / 1024);
+      capacity *= 1024;
+    
+      //sbrk to request new memory
+      ptr = sbrk(capacity);
+      
+      //set higher bounds
+      upper_mem_bound = ptr + capacity;
       
       //Set new block values
       new_block = ptr;
@@ -102,19 +150,54 @@ beavalloc(size_t size)
     
       //set block list head to new block
       block_list_tail = new_block;
-    }
       
-    //get data location
-    ptr = BLOCK_DATA(new_block);
+      ptr = BLOCK_DATA(new_block);
+      return ptr;
+    
+    }
+    
     return ptr;
 }
 
 void 
 beavfree(void *ptr)
 {
+    
     struct mem_block_s *mem_block = ptr-BLOCK_SIZE;
+    struct mem_block_s *prev_block = NULL;
+    
+    //Free block
     mem_block->size = 0;
     mem_block->free = 1;
+    
+    //if the next block is free
+    if(mem_block->next != NULL && mem_block->next->free > 0){
+      //add next block to capacity
+      mem_block->capacity += BLOCK_SIZE + mem_block->next->capacity;
+      //set next value to the next->next
+      mem_block->next = mem_block->next->next;
+      //set new next value's prev to this block
+      if(mem_block->next != NULL){
+        mem_block->next->prev = mem_block;
+      }
+      beavfree(((void *)mem_block) + BLOCK_SIZE);
+    } else if(mem_block->prev != NULL && mem_block->prev->free > 0){
+      //same thing but in reverse
+      prev_block = mem_block->prev;
+      //add next block to capacity
+      prev_block->capacity += BLOCK_SIZE + mem_block->capacity;
+      //set next value to the next->next
+      prev_block->next = mem_block->next;
+      
+      if(mem_block->next != NULL){
+        //set new next value's prev to this block
+        mem_block->next->prev = prev_block;
+      }
+      
+      beavfree(((void *)prev_block) + BLOCK_SIZE);
+    }
+    
+    
     return;
 }
 
