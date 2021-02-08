@@ -138,9 +138,11 @@ first_fit_tests(void)
     if (test_number == 0 || test_number == 3) {
         bytes10(test_number);
     }
+    fprintf(log_stream, "3\n");
     if (test_number == 0 || test_number == 4) {
         bytes2000(test_number);
     }
+    fprintf(log_stream, "4\n");
     if (test_number == 0 || test_number == 5) {
         bytes10000(test_number);
     }
@@ -154,7 +156,8 @@ first_fit_tests(void)
     if (test_number == 0 || test_number == 8) {
         alloc5free3(test_number);
     }
-
+  
+    fprintf(log_stream, "8\n");
     if (test_number == 0 || test_number == 9) {
         coalesce1(test_number);
     }

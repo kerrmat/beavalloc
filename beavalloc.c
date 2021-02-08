@@ -61,6 +61,11 @@ beavalloc(size_t size)
     struct mem_block_s *block_parse = NULL;
     
     
+    if(size == 0){
+      return NULL;
+    }
+    
+    
     //If this is the first allocation
     if(block_list_head == NULL){
     
@@ -70,6 +75,9 @@ beavalloc(size_t size)
     
       //sbrk to request new memory
       ptr = sbrk(capacity);
+      if(ptr == (void *)-1){
+        return NULL;
+      }
       
       //set higher and lower bounds
       upper_mem_bound = ptr + capacity;
@@ -95,6 +103,7 @@ beavalloc(size_t size)
       //Check for blocks to split
       block_parse = block_list_head;
       while(block_parse != NULL){
+      
         //If there is enough room
         if(block_parse->capacity - block_parse->size >= size + BLOCK_SIZE){
         
@@ -103,11 +112,13 @@ beavalloc(size_t size)
               block_parse->free = 0;
               return BLOCK_DATA(block_parse);
           }
-        
+          
           //Set new block to be the end of parsed block
-          new_block = block_parse + BLOCK_SIZE + block_parse->size;
+          new_block = (void*)block_parse + BLOCK_SIZE + block_parse->size;
+          
           new_block->size = size;
           new_block->capacity = block_parse->capacity - BLOCK_SIZE - block_parse->size;
+                    
           new_block->prev = block_parse;
           new_block->next = block_parse->next;
           new_block->free = 0;
@@ -118,6 +129,11 @@ beavalloc(size_t size)
           
           block_parse->next = new_block;
           block_parse->capacity = block_parse->size;
+          
+          if(block_list_tail == block_parse){
+            block_list_tail = new_block;
+          }
+          
           
           ptr = BLOCK_DATA(new_block);
           return ptr;
@@ -133,6 +149,9 @@ beavalloc(size_t size)
     
       //sbrk to request new memory
       ptr = sbrk(capacity);
+      if(ptr == (void *)-1){
+        return NULL;
+      }
       
       //set higher bounds
       upper_mem_bound = ptr + capacity;
@@ -163,8 +182,21 @@ void
 beavfree(void *ptr)
 {
     
-    struct mem_block_s *mem_block = ptr-BLOCK_SIZE;
+    struct mem_block_s *mem_block = NULL;
     struct mem_block_s *prev_block = NULL;
+
+    if(ptr == NULL){
+      return;
+    }
+    
+    mem_block = ptr-BLOCK_SIZE;
+    
+    if(mem_block->free > 0){
+      if(isVerbose){
+        fprintf(beavalloc_log_stream, "You tried to free a free free: %p\n", mem_block);
+      }
+      return;
+    }
     
     //Free block
     mem_block->size = 0;
@@ -180,7 +212,8 @@ beavfree(void *ptr)
       if(mem_block->next != NULL){
         mem_block->next->prev = mem_block;
       }
-      beavfree(((void *)mem_block) + BLOCK_SIZE);
+      mem_block->free = 0;
+      beavfree(BLOCK_DATA(mem_block));
     } else if(mem_block->prev != NULL && mem_block->prev->free > 0){
       //same thing but in reverse
       prev_block = mem_block->prev;
@@ -193,8 +226,8 @@ beavfree(void *ptr)
         //set new next value's prev to this block
         mem_block->next->prev = prev_block;
       }
-      
-      beavfree(((void *)prev_block) + BLOCK_SIZE);
+      prev_block->free = 0;
+      beavfree(BLOCK_DATA(prev_block));
     }
     
     
@@ -205,13 +238,28 @@ beavfree(void *ptr)
 void 
 beavalloc_reset(void)
 {
-  brk(lower_mem_bound);
+  if(lower_mem_bound != NULL){
+    brk(lower_mem_bound);
+  }
+  
+  block_list_head = NULL;
+  block_list_tail = NULL;
+  
+  return;
 }
 
 void *
 beavcalloc(size_t nmemb, size_t size)
 {
     void *ptr = NULL;
+    
+    if(nmemb == 0 || size == 0){
+      return ptr;
+    }
+    ptr = beavalloc(nmemb*size);
+    if(ptr != NULL){
+      memset(ptr, 0, nmemb*size);
+    }
 
     return ptr;
 }
@@ -220,6 +268,31 @@ void *
 beavrealloc(void *ptr, size_t size)
 {
     void *nptr = NULL;
+    struct mem_block_s *mem_block = NULL;
+    
+    if(ptr == NULL){
+      return beavalloc(size);
+    }
+    
+    if(size == 0){
+      beavfree(ptr);
+      return NULL;
+    }    
+    
+    mem_block = ptr - BLOCK_SIZE;
+    
+    if(mem_block->capacity > size){
+      mem_block->size = size;
+      return BLOCK_DATA(mem_block);
+    }
+    
+    beavfree(BLOCK_DATA(mem_block));
+    nptr = beavalloc(size);
+    
+    if(nptr != ptr){
+      memcpy(nptr, ptr, size);
+    }
+    
 
     return nptr;
 }
@@ -228,6 +301,14 @@ void *
 beavstrdup(const char *s)
 {
     void *nptr = NULL;
+    
+    size_t length = strlen(s);
+    size_t size = length*sizeof(char) + 1;
+    
+    if(size > 0){
+      nptr = beavalloc(size);
+      memcpy(nptr, s, size);
+    }
 
     return nptr;
 }
